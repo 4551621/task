@@ -1,0 +1,45 @@
+# Merge the customer and transaction data
+merged_data = transactions.merge(customers, on='CustomerID', how='left')
+merged_data = merged_data.merge(products, on='ProductID', how='left')
+
+# Feature engineering: Calculate the total spend per customer and frequency of transactions
+customer_features = merged_data.groupby('CustomerID').agg(
+    total_spend=('TotalValue', 'sum'),
+    avg_spend=('TotalValue', 'mean'),
+    transaction_count=('TransactionID', 'count')
+).reset_index()
+
+# Merge with customer profile data
+customer_profile = customers[['CustomerID', 'Region']]
+customer_features = customer_features.merge(customer_profile, on='CustomerID', how='left')
+
+print(customer_features.head())
+# Normalize numerical features
+scaler = StandardScaler()
+numerical_features = ['total_spend', 'avg_spend', 'transaction_count']
+customer_features[numerical_features] = scaler.fit_transform(customer_features[numerical_features])
+
+# Calculate the cosine similarity between customers
+similarity_matrix = cosine_similarity(customer_features[numerical_features])
+
+# Function to get top 3 similar customers
+def get_top_similar_customers(customer_id, similarity_matrix, customer_features):
+    customer_idx = customer_features[customer_features['CustomerID'] == customer_id].index[0]
+    similarity_scores = similarity_matrix[customer_idx]
+    similar_customer_indices = similarity_scores.argsort()[-4:-1]  # Get the top 3 similar customers excluding the customer itself
+    similar_customers = customer_features.iloc[similar_customer_indices][['CustomerID', 'Region']]
+    similar_customers['SimilarityScore'] = similarity_scores[similar_customer_indices]
+    return similar_customers
+
+# Get top 3 similar customers for the first 20 customers
+lookalikes = []
+for i in range(20):
+    customer_id = customer_features.iloc[i]['CustomerID']
+    lookalike = get_top_similar_customers(customer_id, similarity_matrix, customer_features)
+    lookalikes.append(lookalike)
+
+# Combine all results into a single DataFrame
+lookalike_df = pd.concat(lookalikes)
+lookalike_df.to_csv('Lookalike.csv', index=False)
+
+print(lookalike_df.head())
